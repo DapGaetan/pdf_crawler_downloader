@@ -1,0 +1,14 @@
+# Ignore environment files
+.env
+
+# Ignore PDFs files
+pdfs/*
+!pdfs/.gitkeep
+
+
+# Ignore log
+*.log
+
+# Ignore system files
+.DS_Store
+Thumbs.db

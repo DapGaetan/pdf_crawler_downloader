@@ -6,14 +6,19 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
-# --- CONFIGURATION ---
-BASE_URL = "https://my-url"
-LOGIN_URL = "https://my-url/login"
-DOCS_URL = "https://my-url/documents-url"
-USERNAME = "jhon.doe"
-PASSWORD = "FrWin98"
-DOWNLOAD_FOLDER = "my_folder_name/pdfs"
+# Load environment variables from .env file
+load_dotenv()
+
+# Use environment variables
+BASE_URL = os.getenv("BASE_URL")
+LOGIN_URL = os.getenv("LOGIN_URL")
+DOCS_URL = os.getenv("DOCS_URL")
+USERNAME = os.getenv("USERNAME")
+PASSWORD = os.getenv("PASSWORD")
+DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER")
+
 
 # --- WebDriver Initialization ---
 driver = webdriver.Chrome() 
