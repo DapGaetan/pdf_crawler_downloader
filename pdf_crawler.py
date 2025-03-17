@@ -9,7 +9,6 @@ from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv, find_dotenv
 
-# --- Load .env file ---
 for var in ["BASE_URL", "LOGIN_URL", "DOCS_URL", "USERNAME", "PASSWORD", "DOWNLOAD_FOLDER"]:
     os.environ.pop(var, None)
 
@@ -18,7 +17,6 @@ if not env_path:
     raise FileNotFoundError("⚠️ No .env file found! Check its location.")
 load_dotenv(env_path, override=True)
 
-# --- Retrieve variables ---
 BASE_URL = os.getenv("BASE_URL")
 LOGIN_URL = os.getenv("LOGIN_URL")
 DOCS_URL = os.getenv("DOCS_URL").split("&page=")[0]
@@ -26,18 +24,15 @@ USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER")
 
-print("🔍 Starting script on:", DOCS_URL)
+print("🔍 Script starting on:", DOCS_URL)
 
-# --- Selenium configuration ---
 chrome_options = Options()
 chrome_options.add_argument("--incognito")
 chrome_options.add_argument("--disable-extensions")
 chrome_options.add_argument("--start-maximized")
 
-# --- Launch browser ---
 driver = webdriver.Chrome(options=chrome_options)
 
-# --- Login ---
 driver.get(LOGIN_URL)
 driver.delete_all_cookies()
 time.sleep(2)
@@ -52,36 +47,31 @@ try:
     password_field.send_keys(PASSWORD)
 
     password_field.send_keys(Keys.RETURN)
-    print("✅ Login successful")
+    print("✅ Successfully logged in")
 except Exception as e:
-    print("❌ Error during login:", e)
+    print("❌ Login error:", e)
     driver.quit()
     exit(1)
 
 time.sleep(5)
 
-# --- Create download folder ---
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# --- Function to get PDF links on a page ---
 def get_pdf_links():
     html = driver.page_source
     soup = BeautifulSoup(html, "html.parser")
     pdf_links = set()
 
-    # 🔹 1️⃣ PDF links in <a>
     for link in soup.find_all("a", href=True):
         if link["href"].endswith(".pdf"):
             pdf_links.add(link["href"])
 
-    # 🔹 2️⃣ PDF links hidden in JS
     for script in soup.find_all("script"):
         if script.string and ".pdf" in script.string:
             for part in script.string.split('"'):
                 if part.endswith(".pdf"):
                     pdf_links.add(part)
 
-    # 🔹 3️⃣ Normalize URLs
     final_links = []
     for pdf_url in pdf_links:
         if not pdf_url.startswith("http"):
@@ -91,7 +81,6 @@ def get_pdf_links():
     print(f"📄 {len(final_links)} PDF files found!")
     return final_links
 
-# --- Function to download PDFs ---
 def download_pdfs(pdf_links):
     for pdf_url in pdf_links:
         file_name = os.path.basename(urllib.parse.unquote(pdf_url))
@@ -110,9 +99,66 @@ def download_pdfs(pdf_links):
                     f.write(chunk)
             print("📥 Downloaded:", file_path)
         except Exception as e:
-            print("❌ Error downloading", pdf_url, ":", e)
+            print("❌ Download error for", pdf_url, ":", e)
 
-# --- Explore all pages ---
+def get_media_type(media_url):
+    image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg"]
+    video_extensions = [".mp4", ".webm", ".avi", ".mov"]
+    audio_extensions = [".mp3", ".wav", ".flac", ".aac"]
+    document_extensions = [".pdf"]
+
+    if any(media_url.endswith(ext) for ext in image_extensions):
+        return "photo"
+    elif any(media_url.endswith(ext) for ext in video_extensions):
+        return "video"
+    elif any(media_url.endswith(ext) for ext in audio_extensions):
+        return "audio"
+    elif any(media_url.endswith(ext) for ext in document_extensions):
+        return "document"
+    else:
+        return "other"
+
+def download_media(media_url):
+    media_type = get_media_type(media_url)
+    media_folder = os.path.join(DOWNLOAD_FOLDER, media_type)
+    os.makedirs(media_folder, exist_ok=True)
+    
+    file_name = os.path.basename(urllib.parse.unquote(media_url))
+    file_path = os.path.join(media_folder, file_name)
+
+    try:
+        session = requests.Session()
+        for cookie in driver.get_cookies():
+            session.cookies.set(cookie['name'], cookie['value'])
+
+        r = session.get(media_url, stream=True, verify=False)
+        r.raise_for_status()
+        
+        with open(file_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+        print(f"📥 Downloaded ({media_type}):", file_path)
+    except Exception as e:
+        print("❌ Download error for", media_url, ":", e)
+
+def explore_media_page(media_url):
+    driver.get(media_url)
+    time.sleep(3)
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+    layout_content = soup.find("div", class_="layout-content")
+    media_link = None
+    
+    if layout_content:
+        img_tag = layout_content.find("img", src=True)
+        if img_tag:
+            media_link = img_tag["src"]
+    
+    if media_link:
+        if not media_link.startswith("http"):
+            media_link = BASE_URL + media_link
+        return media_link
+    return None
+
 current_page = 0
 while True:
     page_url = f"{DOCS_URL}&page={current_page}"
@@ -120,15 +166,35 @@ while True:
 
     driver.get(page_url)
     time.sleep(5)
-
-    pdf_links = get_pdf_links()
     
-    if not pdf_links:
-        print("❌ No data found. Ending script.")
+    pdf_links = get_pdf_links()
+    if pdf_links:
+        download_pdfs(pdf_links)
+
+    rows = driver.find_elements(By.XPATH, "//tbody/tr")
+    media_links = []
+    
+    for row in rows:
+        try:
+            cells = row.find_elements(By.TAG_NAME, "td")
+            if len(cells) > 2:
+                link = cells[2].find_element(By.TAG_NAME, "a")
+                media_page_url = link.get_attribute("href")
+                media_links.append(media_page_url)
+        except Exception as e:
+            print(f"❌ Error fetching links: {e}")
+
+    if not media_links:
+        print("❌ No data found. Script ending.")
         break
 
-    download_pdfs(pdf_links)
+    for media_url in media_links:
+        print(f"🔗 Exploring media page: {media_url}")
+        full_media_url = explore_media_page(media_url)
+        if full_media_url:
+            download_media(full_media_url)
+
     current_page += 1
 
-print("✅ End of script.")
+print("✅ Script finished.")
 driver.quit()
