@@ -5,75 +5,130 @@ import urllib.parse
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# --- Load .env file ---
+for var in ["BASE_URL", "LOGIN_URL", "DOCS_URL", "USERNAME", "PASSWORD", "DOWNLOAD_FOLDER"]:
+    os.environ.pop(var, None)
 
-# Use environment variables
+env_path = find_dotenv()
+if not env_path:
+    raise FileNotFoundError("⚠️ No .env file found! Check its location.")
+load_dotenv(env_path, override=True)
+
+# --- Retrieve variables ---
 BASE_URL = os.getenv("BASE_URL")
 LOGIN_URL = os.getenv("LOGIN_URL")
-DOCS_URL = os.getenv("DOCS_URL")
+DOCS_URL = os.getenv("DOCS_URL").split("&page=")[0]
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER")
 
+print("🔍 Starting script on:", DOCS_URL)
 
-# --- WebDriver Initialization ---
-driver = webdriver.Chrome() 
+# --- Selenium configuration ---
+chrome_options = Options()
+chrome_options.add_argument("--incognito")
+chrome_options.add_argument("--disable-extensions")
+chrome_options.add_argument("--start-maximized")
 
-# --- Login to the site ---
+# --- Launch browser ---
+driver = webdriver.Chrome(options=chrome_options)
+
+# --- Login ---
 driver.get(LOGIN_URL)
+driver.delete_all_cookies()
 time.sleep(2)
 
-# Fill in the ID field
-username_field = driver.find_element(By.ID, "edit-name")
-username_field.send_keys(USERNAME)
+try:
+    username_field = driver.find_element(By.ID, "edit-name")
+    username_field.clear()
+    username_field.send_keys(USERNAME)
 
-# Fill in the password field
-password_field = driver.find_element(By.ID, "edit-pass")
-password_field.send_keys(PASSWORD)
+    password_field = driver.find_element(By.ID, "edit-pass")
+    password_field.clear()
+    password_field.send_keys(PASSWORD)
 
-# Submit the form
-password_field.send_keys(Keys.RETURN)
+    password_field.send_keys(Keys.RETURN)
+    print("✅ Login successful")
+except Exception as e:
+    print("❌ Error during login:", e)
+    driver.quit()
+    exit(1)
+
 time.sleep(5)
 
-# --- Go to the documents page ---
-driver.get(DOCS_URL)
-time.sleep(5)
-
-# Retrieve the loaded HTML
-html = driver.page_source
-soup = BeautifulSoup(html, "html.parser")
-
-# --- Download the PDFs ---
+# --- Create download folder ---
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
-links = soup.find_all("a", href=lambda href: href and href.endswith(".pdf"))
 
-for link in links:
-    pdf_url = link.get("href")
-    if not pdf_url.startswith("http"):
-        pdf_url = BASE_URL + pdf_url
+# --- Function to get PDF links on a page ---
+def get_pdf_links():
+    html = driver.page_source
+    soup = BeautifulSoup(html, "html.parser")
+    pdf_links = set()
+
+    # 🔹 1️⃣ PDF links in <a>
+    for link in soup.find_all("a", href=True):
+        if link["href"].endswith(".pdf"):
+            pdf_links.add(link["href"])
+
+    # 🔹 2️⃣ PDF links hidden in JS
+    for script in soup.find_all("script"):
+        if script.string and ".pdf" in script.string:
+            for part in script.string.split('"'):
+                if part.endswith(".pdf"):
+                    pdf_links.add(part)
+
+    # 🔹 3️⃣ Normalize URLs
+    final_links = []
+    for pdf_url in pdf_links:
+        if not pdf_url.startswith("http"):
+            pdf_url = BASE_URL + pdf_url
+        final_links.append(pdf_url)
+
+    print(f"📄 {len(final_links)} PDF files found!")
+    return final_links
+
+# --- Function to download PDFs ---
+def download_pdfs(pdf_links):
+    for pdf_url in pdf_links:
+        file_name = os.path.basename(urllib.parse.unquote(pdf_url))
+        file_path = os.path.join(DOWNLOAD_FOLDER, file_name)
+
+        try:
+            session = requests.Session()
+            for cookie in driver.get_cookies():
+                session.cookies.set(cookie['name'], cookie['value'])
+
+            r = session.get(pdf_url, stream=True, verify=False)
+            r.raise_for_status()
+            
+            with open(file_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print("📥 Downloaded:", file_path)
+        except Exception as e:
+            print("❌ Error downloading", pdf_url, ":", e)
+
+# --- Explore all pages ---
+current_page = 0
+while True:
+    page_url = f"{DOCS_URL}&page={current_page}"
+    print(f"📜 Exploring page {current_page}: {page_url}")
+
+    driver.get(page_url)
+    time.sleep(5)
+
+    pdf_links = get_pdf_links()
     
-    # Decode the URL to get the correct file name
-    file_name = os.path.basename(urllib.parse.unquote(pdf_url))
-    file_path = os.path.join(DOWNLOAD_FOLDER, file_name)
+    if not pdf_links:
+        print("❌ No data found. Ending script.")
+        break
 
-    try:
-        session = requests.Session()
-        for cookie in driver.get_cookies():
-            session.cookies.set(cookie['name'], cookie['value'])
+    download_pdfs(pdf_links)
+    current_page += 1
 
-        r = session.get(pdf_url, stream=True, verify=False)
-        r.raise_for_status()
-        
-        with open(file_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-        print("Downloaded:", file_path)
-    except Exception as e:
-        print("Error for", pdf_url, ":", e)
-
-# --- Close the browser ---
+print("✅ End of script.")
 driver.quit()

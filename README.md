@@ -46,7 +46,7 @@ DOWNLOAD_FOLDER=pdfs/my-files-folder
 ## How to Use
 Run the script:
 ```
-python pdf_downloader.py
+python pdf_crawler.py
 ```
 
 ### The script will:
