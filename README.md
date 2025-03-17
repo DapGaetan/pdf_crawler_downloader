@@ -6,16 +6,11 @@ This script logs into a website, navigates to a page containing PDF documents, a
 ### Requirements:
 - Python 3.x
 
-
 - Selenium: Used for automating browser actions.
 
 - Requests: Used for downloading files.
 
-
 - BeautifulSoup: Used for parsing HTML.
-
-- python-dotenv: Used for loading environment variables from a .env file.
-
 
 - python-dotenv: Used for loading environment variables from a .env file.
 
@@ -24,7 +19,6 @@ This script logs into a website, navigates to a page containing PDF documents, a
 #### Install Python packages by running:
 
 ```bash
-python -m pip install selenium requests beautifulsoup4 python-dotenv
 python -m pip install selenium requests beautifulsoup4 python-dotenv
 ```
 
@@ -51,21 +45,9 @@ PASSWORD=FrWin98
 DOWNLOAD_FOLDER=pdfs/my-files-folder
 ```
 
-#### Store credentials and settings in a .env file:
-
-Create a `.env` file in the same directory as the script and add:
-
-```
-BASE_URL=https://my-url.io
-LOGIN_URL=https://my-url.io/user/login
-DOCS_URL=https://my-url.io/my-files
-USERNAME=jhon.doe
-PASSWORD=FrWin98
-DOWNLOAD_FOLDER=pdfs/my-files-folder
-```
-
 ## How to Use
 Run the script:
+
 ```
 python pdf_crawler.py
 ```
@@ -75,12 +57,7 @@ python pdf_crawler.py
 
 - Log in to the site using the provided credentials.
 
-- Load configuration from the `.env` file.
-
-- Log in to the site using the provided credentials.
-
 - Navigate to the document page.
-
 
 - Download all PDF links to the specified folder.
 
